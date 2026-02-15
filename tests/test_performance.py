@@ -1,5 +1,6 @@
 from functools import partial
 import pytest
+import asyncio
 import time
 import fire
 from AtomicLogger import *
@@ -20,6 +21,21 @@ def worker(i, a_times=5):
         for _ in range(a_times):
             alog.atom_error(f"worker {i} error working process, result is 100")
             time.sleep(0.01)
+    return i
+
+def worker_exception(i, a_times=5):
+
+    with ALogger(logger, f"Block For worker-{i}") as alog:
+        for j in range(a_times):
+            alog.atom_fatal(f"worker {i} error working process, result is 100")
+            alog.atom_error(f"worker {i} error working process, result is 100")
+            alog.atom_info(f"worker {i} error working process, result is 100")
+            alog.atom_debug(f"worker {i} error working process, result is 100")
+            alog.atom_warning(f"worker {i} error working process, result is 100")
+            time.sleep(0.01)
+            if j == a_times // 2:
+                logger.info(f"worker {i} 异常测试")
+                raise Exception("异常测试")
     return i
 
 def worker_raw(i, a_times=5):
@@ -65,6 +81,38 @@ def test_alogger_cross():
 
     logger.info(f"worker_cross time escap : {(time.time_ns() - t_start) / 1_000_000_000}\n\n")
 
+
+def test_exceptions():
+    t_start = time.time_ns()
+    fn = partial(worker_exception, a_times=100)
+    with ThreadPoolExecutor(max_workers=16) as excutor:
+        res = list(excutor.map(fn, range(500)))
+
+    logger.info(f"worker_exception time escap : {(time.time_ns() - t_start) / 1_000_000_000}\n\n")
+
+
+async def a_worker(i, a_times):
+    with ALogger(logger, f"Block For worker-{i}") as alog:
+        for _ in range(a_times):
+            alog.atom_error(f"a_worker {i} error working process, result is 100")
+            await asyncio.sleep(0.01)
+    return i
+
+async def mt_a_worker():
+    semaphore = asyncio.Semaphore(16)
+    async def work(i, a_times):
+        async with semaphore:
+            res = await a_worker(i, a_times)
+        return res
+    tasks = [
+        work(i, 100) for i in range(500)
+    ]
+    results = await asyncio.gather(*tasks)
+
+    print(results)
+
+def test_async_alogger():
+    asyncio.run(mt_a_worker())
 
 if __name__=="__main__":
     fire.Fire()
